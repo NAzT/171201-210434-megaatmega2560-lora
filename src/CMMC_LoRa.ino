@@ -4,12 +4,9 @@
 #include "CMMC_Interval.hpp"
 #include <Adafruit_Sensor.h> 
 #include <NMEAGPS.h>
-#include <GPSport.h>
-
+#include <GPSport.h> 
 #include <rn2xx3.h>
 
-//create an instance of the rn2483 library, using the given Serial port
-rn2xx3 myLora(Serial2);
 
 
 static NMEAGPS  gps; // This parses the GPS characters
@@ -36,7 +33,11 @@ static void GPSloop()
     doSomeWork( gps.read() );
 } // GPSloop 
 
-CMMC_Interval interval;
+rn2xx3 myLora(Serial2);
+CMMC_Interval interval; 
+void led_on();
+void led_off();
+void initialize_radio();
 
 #include <CMMC_RX_Parser.h>
 #include "packet.h"
@@ -57,6 +58,48 @@ CMMC_RX_Parser parser(&Serial3);
 bool flag_dirty = false;
 
 static CMMC_MASTER_PACKET_T master_packet;
+
+
+
+void initialize_radio()
+{
+  delay(100); //wait for the RN2xx3's startup message
+  Serial1.flush();
+
+  //print out the HWEUI so that we can register it via ttnctl
+  String hweui = myLora.hweui();
+  while(hweui.length() != 16)
+  {
+    Serial.println("Communication with RN2xx3 unsuccessful. Power cycle the TTN UNO board.");
+    delay(10000);
+    hweui = myLora.hweui();
+  }
+  Serial.println("When using OTAA, register this DevEUI: ");
+  Serial.println(hweui);
+  Serial.println("RN2xx3 firmware version:");
+  Serial.println(myLora.sysver());
+
+  //configure your keys and join the network
+  Serial.println("Trying to join TTN");
+  bool join_result = false;
+
+  //ABP: initABP(String addr, String AppSKey, String NwkSKey);
+  join_result = myLora.initABP("2604196F", "00B21288211391F29DE14E738385F16F", "5DBECD260FC1D6C71AF029121AAF0A7D");
+
+  //OTAA: initOTAA(String AppEUI, String AppKey);
+  //join_result = myLora.initOTAA("70B3D57ED00001A6", "A23C96EE13804963F8C2BD6285448198");
+
+  myLora.setFrequencyPlan(TTN_US);
+
+  while(!join_result)
+  {
+    Serial.println("Unable to join. Are your keys correct, and do you have TTN coverage?");
+    delay(60000); //delay a minute before retry
+    join_result = myLora.init();
+  }
+  
+  Serial.println("Successfully joined TTN"); 
+}
 
 void setup()
 {
@@ -80,3 +123,12 @@ void loop()
     });
 }
 
+void led_on()
+{
+  digitalWrite(13, 1);
+}
+
+void led_off()
+{
+  digitalWrite(13, 0);
+}
