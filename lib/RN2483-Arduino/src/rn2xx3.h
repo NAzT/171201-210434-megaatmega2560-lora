@@ -176,6 +176,7 @@ class rn2xx3
      * bool - should the data string be hex encoded or not
      */
     TX_RETURN_TYPE txCommand(String, String, bool);
+    TX_RETURN_TYPE txCommand(String, uint8_t*, uint8_t);
 
     /*
      * Change the datarate at which the RN2xx3 transmits.

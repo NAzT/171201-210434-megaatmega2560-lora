@@ -6,8 +6,7 @@
 #include <NMEAGPS.h>
 #include <GPSport.h> 
 #include <rn2xx3.h>
-
-
+#include "packet.h"
 
 static NMEAGPS  gps; // This parses the GPS characters
 
@@ -39,28 +38,8 @@ void led_on();
 void led_off();
 void initialize_radio();
 
-#include <CMMC_RX_Parser.h>
-#include "packet.h"
-
-void array_to_string(byte array[], unsigned int len, char buffer[])
-{
-  for (unsigned int i = 0; i < len; i++)
-  {
-    byte nib1 = (array[i] >> 4) & 0x0F;
-    byte nib2 = (array[i] >> 0) & 0x0F;
-    buffer[i * 2 + 0] = nib1  < 0xA ? '0' + nib1  : 'A' + nib1  - 0xA;
-    buffer[i * 2 + 1] = nib2  < 0xA ? '0' + nib2  : 'A' + nib2  - 0xA;
-  }
-  buffer[len * 2] = '\0';
-}
-CMMC_RX_Parser parser(&Serial3);
-
-bool flag_dirty = false;
-
-static CMMC_MASTER_PACKET_T master_packet;
-
-
-
+#include <CMMC_RX_Parser.h> 
+CMMC_RX_Parser parser(&Serial3); 
 void initialize_radio()
 {
   delay(100); //wait for the RN2xx3's startup message
@@ -97,7 +76,7 @@ void initialize_radio()
     delay(60000); //delay a minute before retry
     join_result = myLora.init();
   }
-  
+
   Serial.println("Successfully joined TTN"); 
 }
 
@@ -109,17 +88,36 @@ void setup()
 
   Serial.println("Initalizing LoRa module...");
   Serial.println("BEGIN...");
+  //output LED pin
+  pinMode(13, OUTPUT);
+  led_on(); 
+  initialize_radio(); 
+  // myLora.tx("TTN Mapper on TTN Uno node"); 
+  led_off();
 }
+ 
+// uint8_t txBuffer[11];
+
+CMMC_SENSOR_T packet;
 
 void loop()
 {
   parser.process();
   GPSloop();
-    interval.every_ms(2L * 1000, []() { 
+    interval.every_ms(10L * 1000, []() { 
+      packet.type  = 1;
+      packet.seq1  = 1;
+      packet.seq2  = 1;
+      packet.field1 = gps_latitude;
+      packet.field2 = gps_longitude;
       Serial.println(millis());
-      Serial.print(gps_latitude); 
+      Serial.print(gps_latitude/1000.0); 
       Serial.print(","); 
-      Serial.println(gps_longitude);
+      Serial.println(gps_longitude/1000.0 ); 
+      if (packet.field1 != 0) {
+        Serial.print("sending... result: ");
+        Serial.println(myLora.txCommand("mac tx uncnf 1 ", (uint8_t*)&packet, sizeof(packet))); 
+      }
     });
 }
 

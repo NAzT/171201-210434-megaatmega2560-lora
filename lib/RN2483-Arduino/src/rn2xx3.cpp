@@ -352,6 +352,163 @@ TX_RETURN_TYPE rn2xx3::txUncnf(String data)
   return txCommand("mac tx uncnf 1 ", data, true);
 }
 
+TX_RETURN_TYPE rn2xx3::txCommand(String command, uint8_t *data, uint8_t len) { 
+  bool send_success = false;
+  uint8_t busy_count = 0;
+  uint8_t retry_count = 0;
+
+  //clear serial buffer
+  while(_serial.available())
+    _serial.read();
+
+  while(!send_success)
+  {
+    //retransmit a maximum of 10 times
+    retry_count++;
+    if(retry_count>10)
+    {
+      return TX_FAIL;
+    }
+
+    _serial.print(command);
+     char buffer[3];
+     for (unsigned i=0; i<len; i++) {
+        sprintf(buffer, "%02x", data[i]);
+        Serial.print(buffer);
+        _serial.print(buffer);
+     }
+     Serial.println();
+    _serial.println();
+
+    String receivedData = _serial.readStringUntil('\n');
+    Serial.println(receivedData);
+    //TODO: Debug print on receivedData
+
+    if(receivedData.startsWith("ok"))
+    {
+      _serial.setTimeout(30000);
+      receivedData = _serial.readStringUntil('\n');
+      _serial.setTimeout(2000);
+
+      //TODO: Debug print on receivedData
+
+      if(receivedData.startsWith("mac_tx_ok"))
+      {
+        //SUCCESS!!
+        send_success = true;
+        return TX_SUCCESS;
+      }
+
+      else if(receivedData.startsWith("mac_rx"))
+      {
+        //example: mac_rx 1 54657374696E6720313233
+        _rxMessenge = receivedData.substring(receivedData.indexOf(' ', 7)+1);
+        send_success = true;
+        return TX_WITH_RX;
+      }
+
+      else if(receivedData.startsWith("mac_err"))
+      {
+        init();
+      }
+
+      else if(receivedData.startsWith("invalid_data_len"))
+      {
+        //this should never happen if the prototype worked
+        send_success = true;
+        return TX_FAIL;
+      }
+
+      else if(receivedData.startsWith("radio_tx_ok"))
+      {
+        //SUCCESS!!
+        send_success = true;
+        return TX_SUCCESS;
+      }
+
+      else if(receivedData.startsWith("radio_err"))
+      {
+        //This should never happen. If it does, something major is wrong.
+        init();
+      }
+
+      else
+      {
+        //unknown response
+        //init();
+      }
+    }
+
+    else if(receivedData.startsWith("invalid_param"))
+    {
+      //should not happen if we typed the commands correctly
+      send_success = true;
+      return TX_FAIL;
+    }
+
+    else if(receivedData.startsWith("not_joined"))
+    {
+      init();
+    }
+
+    else if(receivedData.startsWith("no_free_ch"))
+    {
+      //retry
+      delay(1000);
+    }
+
+    else if(receivedData.startsWith("silent"))
+    {
+      init();
+    }
+
+    else if(receivedData.startsWith("frame_counter_err_rejoin_needed"))
+    {
+      init();
+    }
+
+    else if(receivedData.startsWith("busy"))
+    {
+      busy_count++;
+
+      // Not sure if this is wise. At low data rates with large packets
+      // this can perhaps cause transmissions at more than 1% duty cycle.
+      // Need to calculate the correct constant value.
+      // But it is wise to have this check and re-init in case the
+      // lorawan stack in the RN2xx3 hangs.
+      if(busy_count>=10)
+      {
+        init();
+      }
+      else
+      {
+        delay(1000);
+      }
+    }
+
+    else if(receivedData.startsWith("mac_paused"))
+    {
+      init();
+    }
+
+    else if(receivedData.startsWith("invalid_data_len"))
+    {
+      //should not happen if the prototype worked
+      send_success = true;
+      return TX_FAIL;
+    }
+
+    else
+    {
+      //unknown response after mac tx command
+      init();
+    }
+  }
+
+  return TX_FAIL; //should never reach this
+
+}
+
 TX_RETURN_TYPE rn2xx3::txCommand(String command, String data, bool shouldEncode)
 {
   bool send_success = false;
