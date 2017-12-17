@@ -1,6 +1,8 @@
-#include <Arduino.h>
+#include <Arduino.h> 
 #include <Wire.h>
 #include <SPI.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
 #include "CMMC_Interval.hpp"
 #include <Adafruit_Sensor.h> 
 #include <NMEAGPS.h>
@@ -13,8 +15,14 @@ static NMEAGPS  gps; // This parses the GPS characters
 static int32_t gps_latitude = 0;
 static int32_t gps_longitude = 0;
 static int32_t gps_altitude_cm = 0;
-static uint32_t gps_us;
 
+static int32_t bme_temperature = 0;
+static int32_t bme_humidity = 0;
+
+
+uint16_t seq = 0;
+
+static uint32_t gps_us; 
 static void doSomeWork( const gps_fix & fix );
 static void doSomeWork( const gps_fix & fix )
 {
@@ -34,11 +42,15 @@ static void GPSloop()
 
 rn2xx3 myLora(Serial2);
 CMMC_Interval interval; 
+CMMC_Interval read_sensor; 
 void led_on();
 void led_off();
 void initialize_radio();
 
 #include <CMMC_RX_Parser.h> 
+Adafruit_BME280 bme; // I2C 
+
+
 CMMC_RX_Parser parser(&Serial3); 
 void initialize_radio()
 {
@@ -63,22 +75,27 @@ void initialize_radio()
   bool join_result = false;
 
   //ABP: initABP(String addr, String AppSKey, String NwkSKey);
-  join_result = myLora.initABP("2604196F", "00B21288211391F29DE14E738385F16F", "5DBECD260FC1D6C71AF029121AAF0A7D");
+  join_result = myLora.initABP("26041B8F", "C4732F8F77E37B4FD8D0A565C6771C70", "22D70570B3DA95B0BB335C6BB06FD067");
 
   //OTAA: initOTAA(String AppEUI, String AppKey);
-  //join_result = myLora.initOTAA("70B3D57ED00001A6", "A23C96EE13804963F8C2BD6285448198");
+  // join_result = myLora.initOTAA("70B3D57ED00083FF", "62A53449E0B874D147FA871371FE23CF");
 
   myLora.setFrequencyPlan(TTN_US);
 
+  Serial.println(myLora.sendRawCommand("radio set freq 925000000"));
+  Serial.println(myLora.sendRawCommand("radio get freq"));
+
   while(!join_result)
   {
-    Serial.println("Unable to join. Are your keys correct, and do you have TTN coverage?");
-    delay(60000); //delay a minute before retry
+    Serial.println("Unable to join. Are your keys correct, and do you have TTN coverage?"); 
+    delay(6000); //delay a minute before retry
+    Serial.println("retrying..");
     join_result = myLora.init();
   }
 
   Serial.println("Successfully joined TTN"); 
 }
+
 
 void setup()
 {
@@ -86,14 +103,27 @@ void setup()
   gpsPort.begin(9600);
   Serial2.begin(57600);
 
+
   Serial.println("Initalizing LoRa module...");
   Serial.println("BEGIN...");
+  Wire.begin();
+  
+  // default settings
+  // (you can also pass in a Wire library object like &Wire2)
+  bool status = bme.begin(0x76); 
+  Serial.println(status);
+  if (!status) {
+      Serial.println("Could not find a valid BME280 sensor, check wiring!");
+      while (1);
+  } 
+
   //output LED pin
   pinMode(13, OUTPUT);
   led_on(); 
   initialize_radio(); 
   // myLora.tx("TTN Mapper on TTN Uno node"); 
   led_off();
+
 }
  
 // uint8_t txBuffer[11];
@@ -104,10 +134,25 @@ void loop()
 {
   parser.process();
   GPSloop();
-    interval.every_ms(10L * 1000, []() { 
+    read_sensor.every_ms(2L * 1000, []() { 
+      float t = bme.readTemperature();
+      float h = bme.readHumidity();
+
+      if (isnan(h) || h == 0) {
+          Serial.println("read bme280 failed... try again..");
+      } 
+      else {
+        bme_humidity = h*100;
+        bme_temperature= t*100;
+        Serial.println(t);
+        Serial.println(h); 
+      }
+
+    });
+
+    interval.every_ms(4L * 1000, []() { 
       packet.type  = 1;
-      packet.seq1  = 1;
-      packet.seq2  = 1;
+      packet.seq  = seq++;
       packet.field1 = gps_latitude;
       packet.field2 = gps_longitude;
       Serial.println(millis());
@@ -117,6 +162,10 @@ void loop()
       if (packet.field1 != 0) {
         Serial.print("sending... result: ");
         Serial.println(myLora.txCommand("mac tx uncnf 1 ", (uint8_t*)&packet, sizeof(packet))); 
+        packet.type = 2;
+        packet.field1 = bme_temperature;
+        packet.field2 = bme_humidity;
+        Serial.println(myLora.txCommand("mac tx uncnf 2 ", (uint8_t*)&packet, sizeof(packet))); 
       }
     });
 }
