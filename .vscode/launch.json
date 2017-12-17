@@ -6,8 +6,8 @@
             "request": "launch",
             "cwd": "${workspaceRoot}",
             "name": "PlatformIO Debugger",
-            "target": "c:/Users/hooman/Documents/171201-210434-megaatmega2560/.pioenvs/megaatmega2560/firmware.elf",
-            "gdbpath": "C:/Users/hooman/.platformio/penv/Scripts/piodebuggdb",
+            "target": "/Users/nat/Documents/PlatformIO/Projects/171201-210434-megaatmega2560-lora/.pioenvs/megaatmega2560/firmware.elf",
+            "gdbpath": "/Users/nat/.platformio/penv/bin/piodebuggdb",
             "autorun": [ "source .pioinit" ]
         }
     ]

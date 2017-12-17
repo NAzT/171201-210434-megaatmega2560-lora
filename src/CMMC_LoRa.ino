@@ -1,14 +1,16 @@
 #include <Arduino.h>
-#include <AIS_NB_IoT.h>
-#include "CMMC_Interval.hpp"
 #include <Wire.h>
-#include <Adafruit_Sensor.h>
-#include <Adafruit_BME680.h>
-
-#define ENABLE_AIS_NB_IOT 1
-
+#include <SPI.h>
+#include "CMMC_Interval.hpp"
+#include <Adafruit_Sensor.h> 
 #include <NMEAGPS.h>
 #include <GPSport.h>
+
+#include <rn2xx3.h>
+
+//create an instance of the rn2483 library, using the given Serial port
+rn2xx3 myLora(Serial2);
+
 
 static NMEAGPS  gps; // This parses the GPS characters
 
@@ -16,9 +18,6 @@ static int32_t gps_latitude = 0;
 static int32_t gps_longitude = 0;
 static int32_t gps_altitude_cm = 0;
 static uint32_t gps_us;
-static uint32_t bme680_tmp;
-static uint32_t bme680_hum;
-static uint32_t bme_gas_resistance_ohm;
 
 static void doSomeWork( const gps_fix & fix );
 static void doSomeWork( const gps_fix & fix )
@@ -37,12 +36,6 @@ static void GPSloop()
     doSomeWork( gps.read() );
 } // GPSloop
 
-String serverIP = "103.212.181.167";
-String serverPort = "55566";
-AIS_NB_IoT AISnb;
-AIS_NB_IoT_RES resp;
-
-Adafruit_BME680 bme; // I2C
 #define SEALEVELPRESSURE_HPA (1013.25)
 
 String udpData = "";
@@ -93,75 +86,21 @@ static void msg_recv(u8 * packet, u8 len) {
 void setup()
 {
   Serial.begin(57600);
-  Serial.println("Waiting NB-IoT first boot..");
+  Serial.println("Initalizing LoRa module...");
   Serial3.begin(57600);
   gpsPort.begin(9600);
-  Wire.begin();
-
-  if (!bme.begin()) {
-    Serial.println("Could not find a valid BME680 sensor, check wiring!");
-  }
-  // Set up oversampling and filter initialization
-  bme.setTemperatureOversampling(BME680_OS_8X);
-  bme.setHumidityOversampling(BME680_OS_2X);
-  bme.setPressureOversampling(BME680_OS_4X);
-  bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
-  bme.setGasHeater(320, 150); // 320*C for 150 ms
-
   Serial.println("BEGIN...");
-#ifdef ENABLE_AIS_NB_IOT
-  delay(5000); // wait nb-iot module boot
-  // AISnb.debug = true;
-  AISnb.setupDevice(serverPort);
-  String ip1 = AISnb.getDeviceIP();
-  Serial.println("Connected...");
-  pingRESP pingR = AISnb.pingIP(serverIP);
-#endif
   parser.on_command_arrived(&msg_recv);
 }
+
 String hexString;
-signal  sig;
 void loop()
 {
   parser.process();
   GPSloop();
-  if (flag_dirty) {
-
-#ifdef ENABLE_AIS_NB_IOT
-    sig = AISnb.getSignal();
-    master_packet.nb_ber = sig.ber.toInt();
-    master_packet.nb_rssi = sig.rssi.toInt();
-    master_packet.nb_csq = sig.csq.toInt();
-#endif 
-    master_packet.gps_altitude_cm = gps_altitude_cm;
-    master_packet.gps_latitude = gps_latitude;
-    master_packet.gps_longitude = gps_longitude;
-    master_packet.gps_us = gps_us;
-    master_packet.temperature_c = bme680_tmp;
-    master_packet.humidity_percent_rh = bme680_hum;
-    master_packet.gas_resistance_ohm =  bme_gas_resistance_ohm;
-    master_packet.cnt++;
-    array_to_string((byte*)&master_packet, sizeof(master_packet), bbb);
-#ifdef ENABLE_AIS_NB_IOT
-    UDPSend res = AISnb.sendUDPmsg(serverIP, serverPort, String(bbb));
-    if (res.status) {
-      Serial.println("SEND OK"); 
-      // AISnb.closeUDPSocket();
-    }
-    else {
-      Serial.println("SEND FAILED.");
-    }
-#endif
-    flag_dirty = false;
-  }
-
-  interval.every_ms(2L * 1000, []() {
-    if (!bme.performReading()) {
-      Serial.println("Failed to perform reading :(");
-      return;
-    }
-    bme680_tmp = bme.temperature*100;
-    bme680_hum = bme.humidity*100;
-    bme_gas_resistance_ohm = bme.gas_resistance; 
-  });
+    interval.every_ms(2L * 1000, []() { 
+      Serial.println(millis());
+      Serial.print(gps_latitude); Serial.print(","); Serial.println(gps_longitude);
+    });
 }
+
